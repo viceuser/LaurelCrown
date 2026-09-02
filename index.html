@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>월계관 닉네임 송출 오버레이</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="preview-stage" aria-label="송출 미리보기">
+        <canvas id="overlayCanvas" width="1280" height="720" aria-label="월계관 닉네임 애니메이션"></canvas>
+      </section>
+
+      <aside class="control-panel" aria-label="오버레이 설정">
+        <div class="panel-head">
+          <p class="eyebrow">OBS Browser Source</p>
+          <div class="panel-title-row">
+            <h1>월계관 닉네임 송출</h1>
+            <button id="inquiryButton" class="inquiry-button" type="button" aria-label="문의">문의</button>
+          </div>
+        </div>
+
+        <div class="field">
+          <span>수상자</span>
+          <div class="winner-fields">
+            <div class="winner-head">
+              <span>순위</span>
+              <span>닉네임</span>
+              <span>색상</span>
+            </div>
+            <div class="winner-row">
+              <input id="rank1" class="rank-input" type="text" value="1위" maxlength="6" aria-label="1위 순위 라벨" />
+              <input id="name1" type="text" value="남순" maxlength="18" aria-label="1위 닉네임" />
+              <select id="tone1" class="tone-select" aria-label="1위 색상">
+                <option value="gold" selected>금</option>
+                <option value="silver">은</option>
+                <option value="bronze">동</option>
+                <option value="platinum">민트(플래티넘)</option>
+              </select>
+            </div>
+            <div class="winner-row">
+              <input id="rank2" class="rank-input" type="text" value="2위" maxlength="6" aria-label="2위 순위 라벨" />
+              <input id="name2" type="text" value="와룡" maxlength="18" aria-label="2위 닉네임" />
+              <select id="tone2" class="tone-select" aria-label="2위 색상">
+                <option value="gold">금</option>
+                <option value="silver" selected>은</option>
+                <option value="bronze">동</option>
+                <option value="platinum">민트(플래티넘)</option>
+              </select>
+            </div>
+            <div class="winner-row">
+              <input id="rank3" class="rank-input" type="text" value="3위" maxlength="6" aria-label="3위 순위 라벨" />
+              <input id="name3" type="text" value="현우" maxlength="18" aria-label="3위 닉네임" />
+              <select id="tone3" class="tone-select" aria-label="3위 색상">
+                <option value="gold">금</option>
+                <option value="silver">은</option>
+                <option value="bronze" selected>동</option>
+                <option value="platinum">민트(플래티넘)</option>
+              </select>
+            </div>
+            <div id="extraWinners" class="extra-winners"></div>
+          </div>
+          <button id="addExtraWinner" class="small-action" type="button">블랙 월계관 추가</button>
+        </div>
+
+        <label class="field">
+          <span>하단 문구</span>
+          <input id="brandText" type="text" value="SOONIGROUP" maxlength="18" />
+        </label>
+
+        <label class="field">
+          <span>폰트</span>
+          <select id="fontFamily">
+            <option value="system">기본 폰트</option>
+            <option value="gang">나눔손글씨 강부장님체</option>
+            <option value="dad">나눔손글씨 아빠의 연애편지</option>
+          </select>
+        </label>
+
+        <label class="field">
+          <span>월계관 스타일</span>
+          <select id="laurelStyle"></select>
+        </label>
+        <div class="laurel-preview" aria-label="월계관 미리보기">
+          <canvas id="laurelPreview" width="320" height="150"></canvas>
+        </div>
+
+        <div class="two-col">
+          <label class="field">
+            <span>크기</span>
+            <input id="scale" type="range" min="72" max="128" value="100" />
+          </label>
+          <label class="field">
+            <span>글자 크기</span>
+            <input id="textScale" type="range" min="70" max="140" value="100" />
+          </label>
+        </div>
+
+        <div class="two-col">
+          <label class="field">
+            <span>간격</span>
+            <input id="spacing" type="range" min="20" max="100" value="62" />
+          </label>
+          <label class="field">
+            <span>속도</span>
+            <input id="speed" type="range" min="30" max="180" value="100" />
+          </label>
+        </div>
+
+        <label class="field">
+          <span>이름 크기</span>
+          <input id="nameScale" type="range" min="60" max="160" value="100" />
+        </label>
+
+        <div class="field">
+          <span>효과</span>
+          <div class="checks">
+            <label><input id="glow" type="checkbox" /> Glow</label>
+            <label><input id="glitter" type="checkbox" /> Glitter</label>
+            <label><input id="shine" type="checkbox" /> Shine Sweep</label>
+            <label><input id="sparkles" type="checkbox" /> Sparkle Particles</label>
+            <label><input id="dust" type="checkbox" /> Gold Dust</label>
+            <label><input id="hologram" type="checkbox" /> Rainbow Hologram</label>
+            <label><input id="neon" type="checkbox" /> Neon</label>
+            <label><input id="fire" type="checkbox" /> Fire</label>
+            <label><input id="ice" type="checkbox" /> Ice</label>
+            <label><input id="lightning" type="checkbox" /> Lightning</label>
+          </div>
+        </div>
+
+        <div class="field">
+          <span>GIF 저장 설정</span>
+          <div class="two-col">
+            <label class="field">
+              <span>화질</span>
+              <input id="gifQuality" type="range" min="1" max="10" value="6" aria-label="GIF 화질 (높을수록 고화질)" />
+            </label>
+            <label class="field">
+              <span>프레임</span>
+              <input id="gifFrames" type="range" min="12" max="48" step="2" value="30" aria-label="GIF 프레임 수" />
+            </label>
+          </div>
+          <label class="field">
+            <span>크기(px)</span>
+            <input id="gifWidth" type="range" min="480" max="1280" step="48" value="864" aria-label="GIF 가로 크기" />
+          </label>
+        </div>
+
+        <div class="actions">
+          <button id="downloadPng" type="button">PNG 저장</button>
+          <button id="downloadGif" type="button">GIF 저장</button>
+          <button id="recordWebm" type="button">애니메이션 저장</button>
+          <button id="copyUrl" type="button">OBS 주소 복사</button>
+        </div>
+
+        <p id="status" class="status" role="status">투명 배경으로 송출됩니다.</p>
+      </aside>
+    </main>
+
+    <script src="vendor/gif.js/gif.js"></script>
+    <script src="vendor/gif.js/gif.worker.inline.js"></script>
+    <script src="assets/laurelExtraPaths.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
