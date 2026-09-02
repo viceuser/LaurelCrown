@@ -56,8 +56,6 @@ const params = new URLSearchParams(location.search);
 
 let start = performance.now();
 let exporting = false;
-let recorder = null;
-let recordedChunks = [];
 let extraWinners = [{ label: "", name: "", tone: "platinum" }];
 
 const podium = [
@@ -1257,49 +1255,6 @@ function createGifWorkerScriptUrl() {
   return new URL("vendor/gif.js/gif.worker.js", location.href).href;
 }
 
-function toggleRecording() {
-  if (recorder && recorder.state === "recording") {
-    recorder.stop();
-    return;
-  }
-
-  if (!canvas.captureStream || !window.MediaRecorder) {
-    setStatus("이 브라우저는 애니메이션 저장을 지원하지 않습니다.");
-    return;
-  }
-
-  recordedChunks = [];
-  const stream = canvas.captureStream(60);
-  recorder = new MediaRecorder(stream, { mimeType: "video/webm" });
-  recorder.ondataavailable = (event) => {
-    if (event.data.size > 0) recordedChunks.push(event.data);
-  };
-  recorder.onstop = () => {
-    const blob = new Blob(recordedChunks, { type: "video/webm" });
-    const link = document.createElement("a");
-    link.download = `${filePrefix()}-podium-animation.webm`;
-    link.href = URL.createObjectURL(blob);
-    link.click();
-    setTimeout(() => URL.revokeObjectURL(link.href), 1000);
-    setStatus("애니메이션 WebM을 저장했습니다.");
-  };
-  recorder.start();
-  setStatus("5초 동안 애니메이션을 녹화합니다.");
-  setTimeout(() => {
-    if (recorder && recorder.state === "recording") recorder.stop();
-  }, 5000);
-}
-
-async function copyObsUrl() {
-  const url = buildObsUrl();
-  try {
-    await navigator.clipboard.writeText(url);
-    setStatus("OBS Browser Source 주소를 복사했습니다.");
-  } catch {
-    setStatus(url);
-  }
-}
-
 function setStatus(message) {
   if (statusEl) statusEl.textContent = message;
 }
@@ -1316,8 +1271,6 @@ function attachEvents() {
   });
   document.getElementById("downloadPng")?.addEventListener("click", downloadPng);
   document.getElementById("downloadGif")?.addEventListener("click", downloadGif);
-  document.getElementById("recordWebm")?.addEventListener("click", toggleRecording);
-  document.getElementById("copyUrl")?.addEventListener("click", copyObsUrl);
   document.getElementById("inquiryButton")?.addEventListener("click", handleInquiry);
   controls.laurelStyle?.addEventListener("change", renderLaurelPreview);
   window.addEventListener("resize", () => {
