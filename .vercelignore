@@ -3,3 +3,5 @@
 .agents
 .codex
 *.log
+*.ttf
+.fonttools-tmp

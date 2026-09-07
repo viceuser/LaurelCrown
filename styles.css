@@ -11,13 +11,13 @@
 
 @font-face {
   font-family: "NanumGangBuJang";
-  src: url("assets/fonts/NanumGangBuJang.ttf") format("truetype");
+  src: url("assets/fonts/NanumGangBuJang.woff2") format("woff2");
   font-display: swap;
 }
 
 @font-face {
   font-family: "NanumDadLoveLetter";
-  src: url("assets/fonts/NanumDadLoveLetter.ttf") format("truetype");
+  src: url("assets/fonts/NanumDadLoveLetter.woff2") format("woff2");
   font-display: swap;
 }
 
@@ -51,6 +51,11 @@ button,
 input,
 select {
   font: inherit;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 select {

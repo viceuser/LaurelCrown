@@ -55,8 +55,10 @@ const addExtraWinnerButton = document.getElementById("addExtraWinner");
 const params = new URLSearchParams(location.search);
 
 let start = performance.now();
-let exporting = false;
+let renderingPaused = false;
+let exportInProgress = false;
 let extraWinners = [{ label: "", name: "", tone: "platinum" }];
+const MAX_EXTRA_WINNERS = 5;
 
 const podium = [
   { rankKey: "rank1", key: "name1", toneKey: "tone1", fallbackTone: "gold", labelOffset: -48, scale: 1.08 },
@@ -213,8 +215,8 @@ function applyUrlState() {
   }
 
   podium.forEach((item) => {
-    if (item.rankKey && params.has(item.rankKey)) controls[item.rankKey].value = params.get(item.rankKey);
-    if (params.has(item.key)) controls[item.key].value = params.get(item.key);
+    if (item.rankKey && params.has(item.rankKey)) controls[item.rankKey].value = params.get(item.rankKey).slice(0, 6);
+    if (params.has(item.key)) controls[item.key].value = params.get(item.key).slice(0, 18);
     if (params.has(item.toneKey) && palettes[params.get(item.toneKey)]) {
       controls[item.toneKey].value = params.get(item.toneKey);
     }
@@ -224,7 +226,7 @@ function applyUrlState() {
     try {
       const parsed = JSON.parse(params.get("extra"));
       if (Array.isArray(parsed)) {
-        extraWinners = parsed.map((item) => ({
+        extraWinners = parsed.slice(0, MAX_EXTRA_WINNERS).map((item) => ({
           label: String(item.label ?? "").slice(0, 8),
           name: String(item.name || "").slice(0, 18),
           tone: palettes[item.tone] ? item.tone : "platinum",
@@ -239,18 +241,20 @@ function applyUrlState() {
     extraWinners = [{ label: "", name: "", tone: "platinum" }];
   }
 
-  if (params.has("brandText")) controls.brandText.value = params.get("brandText");
+  if (params.has("brandText")) controls.brandText.value = params.get("brandText").slice(0, 18);
   if (params.has("fontFamily") && fontFamilies[params.get("fontFamily")]) {
     controls.fontFamily.value = params.get("fontFamily");
   }
   if (params.has("laurelStyle") && laurelStyles[params.get("laurelStyle")]) {
     controls.laurelStyle.value = params.get("laurelStyle");
   }
-  if (params.has("scale")) controls.scale.value = params.get("scale");
-  if (params.has("textScale")) controls.textScale.value = params.get("textScale");
-  if (params.has("nameScale")) controls.nameScale.value = params.get("nameScale");
-  if (params.has("spacing")) controls.spacing.value = params.get("spacing");
-  if (params.has("speed")) controls.speed.value = params.get("speed");
+  ["scale", "textScale", "nameScale", "spacing", "speed"].forEach((key) => {
+    if (!params.has(key)) return;
+    const input = controls[key];
+    const value = Number(params.get(key));
+    if (!Number.isFinite(value)) return;
+    input.value = String(Math.min(Number(input.max), Math.max(Number(input.min), value)));
+  });
 
   Object.keys(controls).forEach((key) => {
     if (params.has(key) && controls[key].type === "checkbox") {
@@ -406,6 +410,12 @@ function renderExtraWinnerInputs() {
     row.append(labelInput, nameInput, toneSelect, tonePalette, removeButton);
     extraWinnersEl.append(row);
   });
+
+  if (addExtraWinnerButton) {
+    const atLimit = extraWinners.length >= MAX_EXTRA_WINNERS;
+    addExtraWinnerButton.disabled = atLimit;
+    addExtraWinnerButton.title = atLimit ? `추가 수상자는 최대 ${MAX_EXTRA_WINNERS}명까지 만들 수 있습니다.` : "";
+  }
 }
 
 function fitCanvasToDisplay() {
@@ -1031,7 +1041,7 @@ function drawScene(now, gifSafe = false) {
 
 function render(now) {
   // 내보내기 중에는 캔버스를 건드리지 않는다(해상도/내용이 덮어써지지 않도록).
-  if (!exporting) {
+  if (!renderingPaused) {
     fitCanvasToDisplay();
     drawScene(now);
   }
@@ -1072,20 +1082,57 @@ function filePrefix() {
   return names || "laurel";
 }
 
+function setExportBusy(busy) {
+  exportInProgress = busy;
+  ["downloadPng", "downloadGif"].forEach((id) => {
+    const button = document.getElementById(id);
+    if (button) button.disabled = busy;
+  });
+}
+
 function downloadPng() {
-  const link = document.createElement("a");
-  link.download = `${filePrefix()}-podium-overlay.png`;
-  link.href = canvas.toDataURL("image/png");
-  link.click();
-  setStatus("PNG를 저장했습니다.");
+  if (exportInProgress) return;
+  setExportBusy(true);
+  renderingPaused = true;
+  const previousWidth = canvas.width;
+  const previousHeight = canvas.height;
+
+  try {
+    canvas.width = 1920;
+    canvas.height = 1080;
+    const now = performance.now();
+    drawScene(now);
+    const crop = measureContentBounds(1, 0, false, now, 0);
+    const output = document.createElement("canvas");
+    output.width = crop.w;
+    output.height = crop.h;
+    const outputCtx = output.getContext("2d");
+    if (!outputCtx) throw new Error("2D canvas context is unavailable");
+    outputCtx.drawImage(canvas, crop.x, crop.y, crop.w, crop.h, 0, 0, crop.w, crop.h);
+    const link = document.createElement("a");
+    link.download = `${filePrefix()}-podium-overlay.png`;
+    link.href = output.toDataURL("image/png");
+    link.click();
+    setStatus(`내용에 맞춰 ${crop.w}×${crop.h} PNG를 저장했습니다.`);
+  } catch (error) {
+    console.error("PNG export failed", error);
+    setStatus("PNG 저장에 실패했습니다.");
+  } finally {
+    canvas.width = previousWidth;
+    canvas.height = previousHeight;
+    renderingPaused = false;
+    setExportBusy(false);
+  }
 }
 
 async function downloadGif() {
+  if (exportInProgress) return;
   if (typeof GIF !== "function") {
     setStatus("GIF 라이브러리를 불러오지 못했습니다.");
     return;
   }
 
+  setExportBusy(true);
   const gifWidthInput = document.getElementById("gifWidth");
   const gifFramesInput = document.getElementById("gifFrames");
   const gifQualityInput = document.getElementById("gifQuality");
@@ -1101,48 +1148,53 @@ async function downloadGif() {
   const previousWidth = canvas.width;
   const previousHeight = canvas.height;
   const aspect = canvas.width > 0 ? canvas.height / canvas.width : 9 / 16;
-  exporting = true;
-  canvas.width = 1920;
-  canvas.height = Math.max(1, Math.round(1920 * aspect));
-
-  // 캔버스는 16:9 전체이지만 실제 내용은 가운데 일부뿐이라, 빈 여백을 잘라내고
-  // 내용 영역만 인코딩한다. 여백이 사라져 파일 크기가 크게 줄어든다.
-  setStatus("GIF 영역을 계산하는 중입니다.");
-  const crop = measureContentBounds(frameCount, motionStep);
-  const outputScale = Math.min(1, maxWidth / crop.w);
-  const width = Math.max(1, Math.round(crop.w * outputScale));
-  const height = Math.max(1, Math.round(crop.h * outputScale));
-  const offscreen = document.createElement("canvas");
-  const offscreenCtx = offscreen.getContext("2d", { willReadFrequently: true });
-  const workerScript = createGifWorkerScriptUrl();
-  const gif = new GIF({
-    workers: 4,
-    quality, // gif.js의 quality는 낮을수록 색 재현이 좋음(기본 10)
-    // 디더링은 켜지 않음: 투명 색상 키 방식과 충돌해 배경이
-    // 불투명한 검은 얼룩으로 남기 때문. 오버레이는 깨끗한 투명 배경이 우선.
-    width,
-    height,
-    repeat: 0,
-    // 깜빡임의 핵심 원인: 기본값은 프레임마다 팔레트를 새로 만들기 때문에
-    // 같은 색이 프레임마다 미세하게 달라진다. 특히 그림자·블랙 월계관 같은
-    // 어두운 영역이 떨려 보인다. 전역 팔레트로 고정해 프레임 간 색을 일치시킨다.
-    globalPalette: true,
-    // 투명 키는 마젠타. gif.js는 팔레트에서 "키 색과 가장 가까운 색"을 투명
-    // 인덱스로 삼으므로, 검정에 가까운 키는 어두운 내용 색과 혼동될 수 있다.
-    transparent: 0xff00ff,
-    workerScript,
-  });
-
-  offscreen.width = width;
-  offscreen.height = height;
-  offscreenCtx.imageSmoothingEnabled = true;
-  offscreenCtx.imageSmoothingQuality = "high";
-  // 이 값 미만의 반투명 픽셀(희미한 파티클/글로우 가장자리)은 투명 처리한다.
-  // GIF는 1비트 투명도만 지원하므로, 알파를 이진화해 검은 노이즈/테두리를 제거한다.
-  const alphaThreshold = 110;
-  setStatus("GIF 프레임을 만드는 중입니다.");
+  let workerScript = "";
+  let gif;
 
   try {
+    renderingPaused = true;
+    canvas.width = 1920;
+    canvas.height = Math.max(1, Math.round(1920 * aspect));
+
+    // 캔버스는 16:9 전체이지만 실제 내용은 가운데 일부뿐이라, 빈 여백을 잘라내고
+    // 내용 영역만 인코딩한다. 여백이 사라져 파일 크기가 크게 줄어든다.
+    setStatus("GIF 영역을 계산하는 중입니다.");
+    const crop = measureContentBounds(frameCount, motionStep);
+    const outputScale = Math.min(1, maxWidth / crop.w);
+    const width = Math.max(1, Math.round(crop.w * outputScale));
+    const height = Math.max(1, Math.round(crop.h * outputScale));
+    const offscreen = document.createElement("canvas");
+    const offscreenCtx = offscreen.getContext("2d", { willReadFrequently: true });
+    if (!offscreenCtx) throw new Error("2D canvas context is unavailable");
+
+    workerScript = createGifWorkerScriptUrl();
+    gif = new GIF({
+      workers: 4,
+      quality, // gif.js의 quality는 낮을수록 색 재현이 좋음(기본 10)
+      // 디더링은 켜지 않음: 투명 색상 키 방식과 충돌해 배경이
+      // 불투명한 검은 얼룩으로 남기 때문. 오버레이는 깨끗한 투명 배경이 우선.
+      width,
+      height,
+      repeat: 0,
+      // 깜빡임의 핵심 원인: 기본값은 프레임마다 팔레트를 새로 만들기 때문에
+      // 같은 색이 프레임마다 미세하게 달라진다. 특히 그림자·블랙 월계관 같은
+      // 어두운 영역이 떨려 보인다. 전역 팔레트로 고정해 프레임 간 색을 일치시킨다.
+      globalPalette: true,
+      // 투명 키는 마젠타. gif.js는 팔레트에서 "키 색과 가장 가까운 색"을 투명
+      // 인덱스로 삼으므로, 검정에 가까운 키는 어두운 내용 색과 혼동될 수 있다.
+      transparent: 0xff00ff,
+      workerScript,
+    });
+
+    offscreen.width = width;
+    offscreen.height = height;
+    offscreenCtx.imageSmoothingEnabled = true;
+    offscreenCtx.imageSmoothingQuality = "high";
+    // 이 값 미만의 반투명 픽셀(희미한 파티클/글로우 가장자리)은 투명 처리한다.
+    // GIF는 1비트 투명도만 지원하므로, 알파를 이진화해 검은 노이즈/테두리를 제거한다.
+    const alphaThreshold = 110;
+    setStatus("GIF 프레임을 만드는 중입니다.");
+
     for (let i = 0; i < frameCount; i += 1) {
       const now = start + i * motionStep * 1000;
       drawScene(now, true); // GIF 안전 모드: 노이즈 유발 효과 비활성화
@@ -1165,36 +1217,57 @@ async function downloadGif() {
       gif.addFrame(offscreenCtx, { copy: true, delay: delayMs });
       await new Promise((resolve) => setTimeout(resolve, 0));
     }
+  } catch (error) {
+    if (workerScript.startsWith("blob:")) URL.revokeObjectURL(workerScript);
+    console.error("GIF export failed", error);
+    setStatus("GIF 저장에 실패했습니다.");
+    setExportBusy(false);
+    return;
   } finally {
     // 화면 렌더링 복구
     canvas.width = previousWidth;
     canvas.height = previousHeight;
-    exporting = false;
+    renderingPaused = false;
   }
 
   setStatus("GIF를 인코딩하는 중입니다.");
   gif.on("finished", (blob) => {
-    if (workerScript.startsWith("blob:")) URL.revokeObjectURL(workerScript);
-    const link = document.createElement("a");
-    link.download = `${filePrefix()}-podium-animation.gif`;
-    link.href = URL.createObjectURL(blob);
-    link.click();
-    setTimeout(() => URL.revokeObjectURL(link.href), 1000);
-    setStatus("GIF를 저장했습니다.");
+    try {
+      if (workerScript.startsWith("blob:")) URL.revokeObjectURL(workerScript);
+      const link = document.createElement("a");
+      link.download = `${filePrefix()}-podium-animation.gif`;
+      link.href = URL.createObjectURL(blob);
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+      setStatus("GIF를 저장했습니다.");
+    } catch (error) {
+      console.error("GIF download failed", error);
+      setStatus("GIF 파일 저장에 실패했습니다.");
+    } finally {
+      setExportBusy(false);
+    }
   });
   gif.on("abort", () => {
     if (workerScript.startsWith("blob:")) URL.revokeObjectURL(workerScript);
     setStatus("GIF 저장이 중단되었습니다.");
+    setExportBusy(false);
   });
   gif.on("progress", (progress) => {
     setStatus(`GIF 인코딩 중 ${Math.round(progress * 100)}%`);
   });
-  gif.render();
+  try {
+    gif.render();
+  } catch (error) {
+    if (workerScript.startsWith("blob:")) URL.revokeObjectURL(workerScript);
+    console.error("GIF encoding failed", error);
+    setStatus("GIF 인코딩을 시작하지 못했습니다.");
+    setExportBusy(false);
+  }
 }
 
 // 애니메이션 전체에서 실제 내용이 차지하는 영역을 구한다.
 // 프레임마다 글로우/맥동으로 크기가 조금씩 달라지므로 여러 프레임의 합집합을 쓴다.
-function measureContentBounds(frameCount, motionStep) {
+function measureContentBounds(frameCount, motionStep, gifSafe = true, baseTime = start, paddingRatio = 0.01) {
   const w = canvas.width;
   const h = canvas.height;
   const full = { x: 0, y: 0, w, h };
@@ -1207,7 +1280,7 @@ function measureContentBounds(frameCount, motionStep) {
   let maxY = -1;
 
   for (let s = 0; s < samples; s += 1) {
-    drawScene(start + (s / samples) * frameCount * motionStep * 1000, true);
+    drawScene(baseTime + (s / samples) * frameCount * motionStep * 1000, gifSafe);
 
     let data;
     try {
@@ -1230,8 +1303,8 @@ function measureContentBounds(frameCount, motionStep) {
 
   if (maxX < minX || maxY < minY) return full; // 내용이 없으면 전체 사용
 
-  const padX = Math.round(w * 0.01);
-  const padY = Math.round(h * 0.01);
+  const padX = Math.round(w * paddingRatio);
+  const padY = Math.round(h * paddingRatio);
   const x = Math.max(0, minX - padX);
   const y = Math.max(0, minY - padY);
 
@@ -1266,6 +1339,7 @@ function handleInquiry() {
 
 function attachEvents() {
   addExtraWinnerButton?.addEventListener("click", () => {
+    if (extraWinners.length >= MAX_EXTRA_WINNERS) return;
     extraWinners.push({ label: "", name: "", tone: "platinum" });
     renderExtraWinnerInputs();
   });
