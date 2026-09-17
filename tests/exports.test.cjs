@@ -109,6 +109,7 @@ function harness(mode = 'success', onYield = () => {}) {
   sandbox.GIF = sandbox.window.GIF;
   vm.runInContext(read('vendor/gif.js/gif.worker.inline.js'), sandbox);
   vm.runInContext(read('assets/laurelExtraPaths.js'), sandbox);
+  vm.runInContext(read('assets/laurelSvgPaths.js'), sandbox);
   vm.runInContext(app, sandbox);
   // No preview thumbnail is needed for resize events in this DOM double.
   vm.runInContext('controls.laurelPreview = null; attachEvents();', sandbox);
@@ -116,6 +117,35 @@ function harness(mode = 'success', onYield = () => {}) {
     setMode: (value) => { mode = value; },
     run: (code) => vm.runInContext(code, sandbox) };
 }
+
+test('SVG asset paths match the bundled source and keep stroke rendering separate from EPS fills', () => {
+  const h = harness();
+  const asset = h.sandbox.window.LAUREL_EXTRA_PATHS.svg_minimal;
+  const paths = Array.from(read('assets/laurels/tabler-laurel-wreath.svg').matchAll(/<path d="([^"]+)"/g), (match) => match[1]);
+  assert.deepEqual(Array.from(asset.paths), paths);
+  assert.equal(h.run('Object.keys(laurelStyles).length'), 17);
+  let strokes = 0, fills = 0;
+  h.elements.overlayCanvas.context.stroke = () => { strokes++; };
+  h.elements.overlayCanvas.context.fill = () => { fills++; };
+  h.run('drawExtraLaurel(100, 100, 80, palettes.gold, 0, "svg_minimal")');
+  assert.equal(strokes, paths.length * 2);
+  assert.equal(fills, 0);
+  strokes = 0;
+  h.run('drawExtraLaurel(100, 100, 80, palettes.gold, 0, "extra_01")');
+  assert.equal(strokes, 0);
+  assert.ok(fills > 0);
+});
+
+test('SVG style supports cropped PNG and GIF exports', async () => {
+  const h = harness();
+  h.elements.laurelStyle.value = 'svgMinimal';
+  assert.equal(h.run('readState().laurelStyle'), 'svgMinimal');
+  h.run('downloadPng()');
+  await h.run('downloadGif()');
+  assert.equal(h.errors.length, 0);
+  assert.ok(h.downloads.some((item) => item.filename?.endsWith('.png')));
+  assert.ok(h.downloads.some((item) => item.filename?.endsWith('.gif')));
+});
 
 test('GIF uses one settings snapshot and independent canvas despite resize and edits', async () => {
   let yields = 0;

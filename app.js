@@ -144,6 +144,8 @@ const laurelStyles = Object.fromEntries(
   })
 );
 
+laurelStyles.svgMinimal = { label: "미니멀 리프 (SVG)", source: "extra", assetKey: "svg_minimal" };
+
 const fontFamilies = {
   system: "\"Segoe UI\", Pretendard, system-ui, sans-serif",
   gang: "\"NanumGangBuJang\", \"Segoe UI\", Pretendard, system-ui, sans-serif",
@@ -347,7 +349,7 @@ function renderLaurelPreview() {
     return item.path2d;
   });
 
-  drawVectorAsset(previewCtx, paths, bounds, assetCx, assetCy, width / 2, height / 2, fittedScale, 1, palettes.black, 0);
+  drawVectorAsset(previewCtx, paths, bounds, assetCx, assetCy, width / 2, height / 2, fittedScale, 1, palettes.black, 0, asset.strokeWidth);
 }
 
 function renderExtraWinnerInputs() {
@@ -526,8 +528,9 @@ function drawExtraLaurel(cx, cy, radius, palette, time, assetKey) {
   return drawVectorLaurel(cx, cy, radius, palette, time, {
     paths: asset.pathObjects,
     bounds: asset.bounds,
-    widthRatio: 1.72,
-    heightRatio: 1.4,
+    widthRatio: asset.widthRatio || 1.72,
+    heightRatio: asset.heightRatio || 1.4,
+    strokeWidth: asset.strokeWidth,
   });
 }
 
@@ -553,11 +556,11 @@ function drawVectorLaurel(cx, cy, radius, palette, time, asset) {
     return item.path2d;
   });
 
-  drawVectorAsset(ctx, paths, bounds, assetCx, assetCy, cx, cy - radius * 0.02, fittedScale, pulse, palette, time);
+  drawVectorAsset(ctx, paths, bounds, assetCx, assetCy, cx, cy - radius * 0.02, fittedScale, pulse, palette, time, asset.strokeWidth);
   return true;
 }
 
-function drawVectorAsset(targetCtx, paths, bounds, assetCx, assetCy, cx, cy, fittedScale, pulse, palette, time) {
+function drawVectorAsset(targetCtx, paths, bounds, assetCx, assetCy, cx, cy, fittedScale, pulse, palette, time, strokeWidth = 0) {
   targetCtx.save();
   targetCtx.translate(cx, cy);
   targetCtx.scale(fittedScale * pulse, fittedScale * pulse);
@@ -571,17 +574,29 @@ function drawVectorAsset(targetCtx, paths, bounds, assetCx, assetCy, cx, cy, fit
   gradient.addColorStop(0.76, palette.laurelA);
   gradient.addColorStop(1, palette.laurelB);
 
+  // Outlined SVGs must be stroked, not filled; preserve their open centers.
+  const paint = (color) => {
+    if (strokeWidth > 0) {
+      targetCtx.lineWidth = strokeWidth;
+      targetCtx.lineCap = "round";
+      targetCtx.lineJoin = "round";
+      targetCtx.strokeStyle = color;
+      paths.forEach((path) => targetCtx.stroke(path));
+    } else {
+      targetCtx.fillStyle = color;
+      paths.forEach((path) => targetCtx.fill(path));
+    }
+  };
+
   targetCtx.globalAlpha = 0.96;
   targetCtx.shadowBlur = 9 * shadowScale;
   targetCtx.shadowColor = palette.glow;
-  targetCtx.fillStyle = gradient;
-  paths.forEach((path) => targetCtx.fill(path));
+  paint(gradient);
 
   targetCtx.shadowBlur = 0;
   targetCtx.globalCompositeOperation = "lighter";
   targetCtx.globalAlpha = 0.2 + Math.sin(time * 2.2) * 0.035;
-  targetCtx.fillStyle = palette.textA;
-  paths.forEach((path) => targetCtx.fill(path));
+  paint(palette.textA);
 
   targetCtx.restore();
 }
