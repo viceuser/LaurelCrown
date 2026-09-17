@@ -5,3 +5,4 @@
 *.log
 *.ttf
 .fonttools-tmp
+tests/

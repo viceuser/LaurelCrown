@@ -8,7 +8,6 @@ OBS Browser Source와 일반 브라우저에서 사용할 수 있는 투명 Canv
 - 금·은·동·민트 색상 팔레트
 - 순위, 닉네임, 하단 문구와 폰트 설정
 - 크기, 간격, 속도와 애니메이션 효과 조절
-- 설정값을 포함한 OBS 오버레이 URL 지원
 - 실제 내용 영역에 맞춘 투명 PNG 저장
 - 투명 배경 애니메이션 GIF 저장
 - 외부 CDN 없이 동작하는 정적 HTML/CSS/JavaScript 구성
@@ -17,13 +16,9 @@ OBS Browser Source와 일반 브라우저에서 사용할 수 있는 투명 Canv
 
 1. `index.html`을 브라우저에서 열거나 배포된 사이트에 접속합니다.
 2. 수상자와 월계관, 색상, 크기 및 효과를 설정합니다.
-3. OBS에서는 설정된 주소에 `?overlay=1`을 적용한 URL을 Browser Source로 사용합니다.
+3. PNG 또는 GIF로 저장해 방송 화면에 사용합니다.
 
-```text
-https://example.com/?overlay=1
-```
-
-URL에 이름, 색상, 월계관 스타일 등의 설정 파라미터를 포함하면 OBS에서도 같은 화면을 재현할 수 있습니다.
+기본 화면을 OBS Browser Source로 띄우려면 사이트 주소에 `?overlay=1`을 붙입니다. 편집한 설정은 이 주소에 자동으로 반영되지 않습니다.
 
 ## 이미지 저장
 

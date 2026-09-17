@@ -1,5 +1,5 @@
 const canvas = document.getElementById("overlayCanvas");
-const ctx = canvas.getContext("2d");
+let ctx = canvas.getContext("2d");
 
 const controls = {
   rank1: document.getElementById("rank1"),
@@ -1013,18 +1013,31 @@ function drawLightning(cx, cy, width, fontSize, time) {
   ctx.restore();
 }
 
-function drawScene(now, gifSafe = false) {
-  const state = readState();
+function drawScene(now, gifSafe = false, state = readState(), target = canvas) {
+  // 하위 그리기 함수는 동기 실행된다. 한 장을 그리는 동안만 전용 context를 사용하고
+  // 다음 프레임의 await 전에 반드시 미리보기 context로 복구한다.
+  const previousCtx = ctx;
+  ctx = target.getContext("2d");
+  try {
+    if (!ctx) throw new Error("2D canvas context is unavailable");
+    drawSceneContent(now, gifSafe, state, target);
+  } finally {
+    ctx = previousCtx;
+  }
+}
+
+function drawSceneContent(now, gifSafe, state, target) {
   // GIF는 반투명/가산 합성 효과를 깨끗이 담지 못해 검은 노이즈가 생긴다.
   // GIF 저장 시에는 노이즈 유발 효과를 끄고, 텍스트에 붙는 안정적 효과만 남긴다.
   if (gifSafe) {
+    state = { ...state, effects: { ...state.effects } };
     gifUnsafeEffects.forEach((key) => {
       state.effects[key] = false;
     });
   }
   const time = ((now - start) / 1000) * state.speed;
-  const w = canvas.width;
-  const h = canvas.height;
+  const w = target.width;
+  const h = target.height;
   const baseScale = Math.min(w / 1280, h / 360) * state.scale;
   const count = Math.max(state.winners.length, 1);
   const blockWidth = Math.min(w / Math.max(count, 3), w / 3);
@@ -1048,31 +1061,8 @@ function render(now) {
   requestAnimationFrame(render);
 }
 
-function buildObsUrl() {
-  const state = readState();
-  const url = new URL(location.href);
-  url.search = "";
-  url.searchParams.set("overlay", "1");
-  podium.forEach((item) => {
-    url.searchParams.set(item.rankKey, controls[item.rankKey].value.trim());
-    url.searchParams.set(item.key, controls[item.key].value.trim());
-    url.searchParams.set(item.toneKey, controls[item.toneKey].value);
-  });
-  url.searchParams.set("extra", JSON.stringify(extraWinners));
-  url.searchParams.set("brandText", state.brandText);
-  url.searchParams.set("fontFamily", state.fontFamily);
-  url.searchParams.set("laurelStyle", state.laurelStyle);
-  url.searchParams.set("scale", controls.scale.value);
-  url.searchParams.set("textScale", controls.textScale.value);
-  url.searchParams.set("nameScale", controls.nameScale.value);
-  url.searchParams.set("spacing", controls.spacing.value);
-  url.searchParams.set("speed", controls.speed.value);
-  Object.entries(state.effects).forEach(([key, value]) => url.searchParams.set(key, value ? "1" : "0"));
-  return url.href;
-}
-
-function filePrefix() {
-  const names = readState()
+function filePrefix(state = readState()) {
+  const names = state
     .winners.map((winner) => winner.name)
     .filter(Boolean)
     .join("-")
@@ -1143,23 +1133,22 @@ async function downloadGif() {
   const motionStep = 1 / 15; // 프레임당 진행하는 애니메이션 시간(초)
   const delayMs = Math.round(motionStep * 1000); // 실제 속도로 재생되도록 프레임 시간과 맞춤
 
-  // 화면 캔버스 해상도가 낮으면 잘라낸 영역도 작아져 흐릿해진다.
-  // 내보내는 동안에는 캔버스를 고해상도로 키워 선명도를 확보한다.
-  const previousWidth = canvas.width;
-  const previousHeight = canvas.height;
-  const aspect = canvas.width > 0 ? canvas.height / canvas.width : 9 / 16;
   let workerScript = "";
-  let gif;
 
   try {
-    renderingPaused = true;
-    canvas.width = 1920;
-    canvas.height = Math.max(1, Math.round(1920 * aspect));
+    // readState는 winners/effects까지 새 객체로 만든다. 파일명과 모든 프레임이
+    // 저장 시작 시점의 설정을 공유하며 이후 사용자 입력과는 독립적이다.
+    const state = readState();
+    const filename = `${filePrefix(state)}-podium-animation.gif`;
+    const aspect = canvas.width > 0 ? canvas.height / canvas.width : 9 / 16;
+    const exportCanvas = document.createElement("canvas");
+    exportCanvas.width = 1920;
+    exportCanvas.height = Math.max(1, Math.round(1920 * aspect));
 
     // 캔버스는 16:9 전체이지만 실제 내용은 가운데 일부뿐이라, 빈 여백을 잘라내고
     // 내용 영역만 인코딩한다. 여백이 사라져 파일 크기가 크게 줄어든다.
     setStatus("GIF 영역을 계산하는 중입니다.");
-    const crop = measureContentBounds(frameCount, motionStep);
+    const crop = measureContentBounds(frameCount, motionStep, true, start, 0.01, exportCanvas, state);
     const outputScale = Math.min(1, maxWidth / crop.w);
     const width = Math.max(1, Math.round(crop.w * outputScale));
     const height = Math.max(1, Math.round(crop.h * outputScale));
@@ -1168,7 +1157,7 @@ async function downloadGif() {
     if (!offscreenCtx) throw new Error("2D canvas context is unavailable");
 
     workerScript = createGifWorkerScriptUrl();
-    gif = new GIF({
+    const gif = new GIF({
       workers: 4,
       quality, // gif.js의 quality는 낮을수록 색 재현이 좋음(기본 10)
       // 디더링은 켜지 않음: 투명 색상 키 방식과 충돌해 배경이
@@ -1197,10 +1186,10 @@ async function downloadGif() {
 
     for (let i = 0; i < frameCount; i += 1) {
       const now = start + i * motionStep * 1000;
-      drawScene(now, true); // GIF 안전 모드: 노이즈 유발 효과 비활성화
+      drawScene(now, true, state, exportCanvas);
       // 검정 배경에 합성하지 않고 투명 캔버스에 그대로 그린 뒤 알파를 이진화한다.
       offscreenCtx.clearRect(0, 0, width, height);
-      offscreenCtx.drawImage(canvas, crop.x, crop.y, crop.w, crop.h, 0, 0, width, height);
+      offscreenCtx.drawImage(exportCanvas, crop.x, crop.y, crop.w, crop.h, 0, 0, width, height);
       const frame = offscreenCtx.getImageData(0, 0, width, height);
       const data = frame.data;
       for (let p = 0; p < data.length; p += 4) {
@@ -1217,59 +1206,102 @@ async function downloadGif() {
       gif.addFrame(offscreenCtx, { copy: true, delay: delayMs });
       await new Promise((resolve) => setTimeout(resolve, 0));
     }
-  } catch (error) {
-    if (workerScript.startsWith("blob:")) URL.revokeObjectURL(workerScript);
-    console.error("GIF export failed", error);
-    setStatus("GIF 저장에 실패했습니다.");
-    setExportBusy(false);
-    return;
-  } finally {
-    // 화면 렌더링 복구
-    canvas.width = previousWidth;
-    canvas.height = previousHeight;
-    renderingPaused = false;
-  }
 
-  setStatus("GIF를 인코딩하는 중입니다.");
-  gif.on("finished", (blob) => {
+    setStatus("GIF를 인코딩하는 중입니다.");
+    const blob = await encodeGif(gif);
+    const link = document.createElement("a");
+    const downloadUrl = URL.createObjectURL(blob);
     try {
-      if (workerScript.startsWith("blob:")) URL.revokeObjectURL(workerScript);
-      const link = document.createElement("a");
-      link.download = `${filePrefix()}-podium-animation.gif`;
-      link.href = URL.createObjectURL(blob);
+      link.download = filename;
+      link.href = downloadUrl;
       link.click();
-      setTimeout(() => URL.revokeObjectURL(link.href), 1000);
       setStatus("GIF를 저장했습니다.");
-    } catch (error) {
-      console.error("GIF download failed", error);
-      setStatus("GIF 파일 저장에 실패했습니다.");
     } finally {
-      setExportBusy(false);
+      setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000);
     }
-  });
-  gif.on("abort", () => {
-    if (workerScript.startsWith("blob:")) URL.revokeObjectURL(workerScript);
-    setStatus("GIF 저장이 중단되었습니다.");
-    setExportBusy(false);
-  });
-  gif.on("progress", (progress) => {
-    setStatus(`GIF 인코딩 중 ${Math.round(progress * 100)}%`);
-  });
-  try {
-    gif.render();
   } catch (error) {
+    console.error("GIF export failed", error);
+    setStatus("GIF 저장에 실패했습니다. 다시 시도해 주세요.");
+  } finally {
     if (workerScript.startsWith("blob:")) URL.revokeObjectURL(workerScript);
-    console.error("GIF encoding failed", error);
-    setStatus("GIF 인코딩을 시작하지 못했습니다.");
     setExportBusy(false);
   }
 }
 
+// 번들 gif.js 0.2.0은 Worker 오류를 전달하거나 완료된 Worker를 종료하지 않는다.
+// 인스턴스별 어댑터로 메시지/실행 오류와 무응답을 처리하고 모든 종료 경로를 정리한다.
+function encodeGif(gif, timeoutMs = 120000) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let timer;
+    const workers = new Set();
+    const spawnWorkers = gif.spawnWorkers;
+    const finish = (error, blob) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      [...gif.freeWorkers, ...gif.activeWorkers].forEach((worker) => workers.add(worker));
+      workers.forEach((worker) => {
+        worker.onmessage = worker.onerror = worker.onmessageerror = null;
+        worker.terminate();
+      });
+      gif.freeWorkers.length = gif.activeWorkers.length = 0;
+      gif.frames.length = 0;
+      gif.imageParts = [];
+      gif.running = false;
+      gif.spawnWorkers = spawnWorkers;
+      gif.removeAllListeners();
+      if (error) reject(error);
+      else resolve(blob);
+    };
+    const resetTimeout = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => finish(new Error("GIF worker timed out")), timeoutMs);
+    };
+    gif.spawnWorkers = function () {
+      const count = spawnWorkers.call(this);
+      this.freeWorkers.forEach((worker) => {
+        workers.add(worker);
+        const onmessage = worker.onmessage;
+        worker.onmessage = (event) => {
+          if (settled) return;
+          try {
+            onmessage.call(worker, event);
+          } catch (error) {
+            finish(error);
+          }
+        };
+        worker.onerror = (event) => {
+          event.preventDefault();
+          finish(new Error(event.message || "GIF worker failed"));
+        };
+        worker.onmessageerror = () => finish(new Error("GIF worker message could not be decoded"));
+      });
+      return count;
+    };
+    gif.on("finished", (blob) => finish(null, blob));
+    gif.on("abort", () => finish(new Error("GIF encoding aborted")));
+    gif.on("error", (error) => finish(error));
+    gif.on("progress", (progress) => {
+      if (settled) return;
+      resetTimeout();
+      setStatus(`GIF 인코딩 중 ${Math.round(progress * 100)}%`);
+    });
+    try {
+      resetTimeout();
+      gif.render();
+    } catch (error) {
+      finish(error);
+    }
+  });
+}
+
 // 애니메이션 전체에서 실제 내용이 차지하는 영역을 구한다.
 // 프레임마다 글로우/맥동으로 크기가 조금씩 달라지므로 여러 프레임의 합집합을 쓴다.
-function measureContentBounds(frameCount, motionStep, gifSafe = true, baseTime = start, paddingRatio = 0.01) {
-  const w = canvas.width;
-  const h = canvas.height;
+function measureContentBounds(frameCount, motionStep, gifSafe = true, baseTime = start, paddingRatio = 0.01, target = canvas, state = readState()) {
+  const w = target.width;
+  const h = target.height;
+  const targetCtx = target.getContext("2d");
   const full = { x: 0, y: 0, w, h };
   const samples = Math.min(frameCount, 6);
   const alphaFloor = 8; // 이보다 옅은 픽셀은 여백으로 본다
@@ -1280,11 +1312,11 @@ function measureContentBounds(frameCount, motionStep, gifSafe = true, baseTime =
   let maxY = -1;
 
   for (let s = 0; s < samples; s += 1) {
-    drawScene(baseTime + (s / samples) * frameCount * motionStep * 1000, gifSafe);
+    drawScene(baseTime + (s / samples) * frameCount * motionStep * 1000, gifSafe, state, target);
 
     let data;
     try {
-      data = ctx.getImageData(0, 0, w, h).data;
+      data = targetCtx.getImageData(0, 0, w, h).data;
     } catch {
       return full; // 캔버스를 읽을 수 없으면 자르지 않는다
     }
