@@ -55,7 +55,6 @@ const addExtraWinnerButton = document.getElementById("addExtraWinner");
 const params = new URLSearchParams(location.search);
 
 let start = performance.now();
-let renderingPaused = false;
 let exportInProgress = false;
 let extraWinners = [{ label: "", name: "", tone: "platinum" }];
 const MAX_EXTRA_WINNERS = 5;
@@ -1053,11 +1052,8 @@ function drawSceneContent(now, gifSafe, state, target) {
 }
 
 function render(now) {
-  // 내보내기 중에는 캔버스를 건드리지 않는다(해상도/내용이 덮어써지지 않도록).
-  if (!renderingPaused) {
-    fitCanvasToDisplay();
-    drawScene(now);
-  }
+  fitCanvasToDisplay();
+  drawScene(now);
   requestAnimationFrame(render);
 }
 
@@ -1080,27 +1076,42 @@ function setExportBusy(busy) {
   });
 }
 
+function createExportCanvas() {
+  // 출력은 화면에 보이는 크기를 기준으로 한다. DPR 또는 1920px 강제 확대를
+  // 저장 파일에 적용하지 않으며, 이후 실제 내용 영역만 남긴다.
+  const rect = canvas.getBoundingClientRect();
+  const output = document.createElement("canvas");
+  output.width = Math.max(1, Math.round(rect.width || canvas.width));
+  output.height = Math.max(1, Math.round(rect.height || canvas.height));
+  return output;
+}
+
 function downloadPng() {
   if (exportInProgress) return;
   setExportBusy(true);
-  renderingPaused = true;
-  const previousWidth = canvas.width;
-  const previousHeight = canvas.height;
-
   try {
-    canvas.width = 1920;
-    canvas.height = 1080;
+    const state = readState();
+    if (!state.winners.length) {
+      setStatus("저장할 내용이 없습니다.");
+      return;
+    }
+    const exportCanvas = createExportCanvas();
     const now = performance.now();
-    drawScene(now);
-    const crop = measureContentBounds(1, 0, false, now, 0);
+    drawScene(now, false, state, exportCanvas);
+    const frame = exportCanvas.getContext("2d").getImageData(0, 0, exportCanvas.width, exportCanvas.height);
+    const crop = findAlphaBounds(frame.data, exportCanvas.width, exportCanvas.height, 9);
+    if (!crop) {
+      setStatus("저장할 내용이 없습니다.");
+      return;
+    }
     const output = document.createElement("canvas");
     output.width = crop.w;
     output.height = crop.h;
     const outputCtx = output.getContext("2d");
     if (!outputCtx) throw new Error("2D canvas context is unavailable");
-    outputCtx.drawImage(canvas, crop.x, crop.y, crop.w, crop.h, 0, 0, crop.w, crop.h);
+    outputCtx.drawImage(exportCanvas, crop.x, crop.y, crop.w, crop.h, 0, 0, crop.w, crop.h);
     const link = document.createElement("a");
-    link.download = `${filePrefix()}-podium-overlay.png`;
+    link.download = `${filePrefix(state)}-podium-overlay.png`;
     link.href = output.toDataURL("image/png");
     link.click();
     setStatus(`내용에 맞춰 ${crop.w}×${crop.h} PNG를 저장했습니다.`);
@@ -1108,9 +1119,6 @@ function downloadPng() {
     console.error("PNG export failed", error);
     setStatus("PNG 저장에 실패했습니다.");
   } finally {
-    canvas.width = previousWidth;
-    canvas.height = previousHeight;
-    renderingPaused = false;
     setExportBusy(false);
   }
 }
@@ -1139,16 +1147,22 @@ async function downloadGif() {
     // readState는 winners/effects까지 새 객체로 만든다. 파일명과 모든 프레임이
     // 저장 시작 시점의 설정을 공유하며 이후 사용자 입력과는 독립적이다.
     const state = readState();
+    if (!state.winners.length) {
+      setStatus("저장할 내용이 없습니다.");
+      return;
+    }
     const filename = `${filePrefix(state)}-podium-animation.gif`;
-    const aspect = canvas.width > 0 ? canvas.height / canvas.width : 9 / 16;
-    const exportCanvas = document.createElement("canvas");
-    exportCanvas.width = 1920;
-    exportCanvas.height = Math.max(1, Math.round(1920 * aspect));
+    const exportCanvas = createExportCanvas();
+    const alphaThreshold = 110;
 
     // 캔버스는 16:9 전체이지만 실제 내용은 가운데 일부뿐이라, 빈 여백을 잘라내고
     // 내용 영역만 인코딩한다. 여백이 사라져 파일 크기가 크게 줄어든다.
     setStatus("GIF 영역을 계산하는 중입니다.");
-    const crop = measureContentBounds(frameCount, motionStep, true, start, 0.01, exportCanvas, state);
+    const crop = await measureContentBounds(frameCount, motionStep, exportCanvas, state, alphaThreshold);
+    if (!crop) {
+      setStatus("저장할 내용이 없습니다.");
+      return;
+    }
     const outputScale = Math.min(1, maxWidth / crop.w);
     const width = Math.max(1, Math.round(crop.w * outputScale));
     const height = Math.max(1, Math.round(crop.h * outputScale));
@@ -1156,32 +1170,14 @@ async function downloadGif() {
     const offscreenCtx = offscreen.getContext("2d", { willReadFrequently: true });
     if (!offscreenCtx) throw new Error("2D canvas context is unavailable");
 
-    workerScript = createGifWorkerScriptUrl();
-    const gif = new GIF({
-      workers: 4,
-      quality, // gif.js의 quality는 낮을수록 색 재현이 좋음(기본 10)
-      // 디더링은 켜지 않음: 투명 색상 키 방식과 충돌해 배경이
-      // 불투명한 검은 얼룩으로 남기 때문. 오버레이는 깨끗한 투명 배경이 우선.
-      width,
-      height,
-      repeat: 0,
-      // 깜빡임의 핵심 원인: 기본값은 프레임마다 팔레트를 새로 만들기 때문에
-      // 같은 색이 프레임마다 미세하게 달라진다. 특히 그림자·블랙 월계관 같은
-      // 어두운 영역이 떨려 보인다. 전역 팔레트로 고정해 프레임 간 색을 일치시킨다.
-      globalPalette: true,
-      // 투명 키는 마젠타. gif.js는 팔레트에서 "키 색과 가장 가까운 색"을 투명
-      // 인덱스로 삼으므로, 검정에 가까운 키는 어두운 내용 색과 혼동될 수 있다.
-      transparent: 0xff00ff,
-      workerScript,
-    });
-
     offscreen.width = width;
     offscreen.height = height;
     offscreenCtx.imageSmoothingEnabled = true;
     offscreenCtx.imageSmoothingQuality = "high";
     // 이 값 미만의 반투명 픽셀(희미한 파티클/글로우 가장자리)은 투명 처리한다.
     // GIF는 1비트 투명도만 지원하므로, 알파를 이진화해 검은 노이즈/테두리를 제거한다.
-    const alphaThreshold = 110;
+    const frames = [];
+    let finalCrop = null;
     setStatus("GIF 프레임을 만드는 중입니다.");
 
     for (let i = 0; i < frameCount; i += 1) {
@@ -1191,6 +1187,33 @@ async function downloadGif() {
       offscreenCtx.clearRect(0, 0, width, height);
       offscreenCtx.drawImage(exportCanvas, crop.x, crop.y, crop.w, crop.h, 0, 0, width, height);
       const frame = offscreenCtx.getImageData(0, 0, width, height);
+      finalCrop = unionBounds(finalCrop, findAlphaBounds(frame.data, width, height, alphaThreshold));
+      frames.push(frame);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+
+    // 리사이즈와 GIF 알파 이진화 후에도 빈 테두리가 남지 않도록 마지막에
+    // 모든 프레임의 공통 영역을 자른다. 프레임마다 따로 자르면 화면이 흔들린다.
+    if (!finalCrop) {
+      setStatus("저장할 내용이 없습니다.");
+      return;
+    }
+    offscreen.width = finalCrop.w;
+    offscreen.height = finalCrop.h;
+    workerScript = createGifWorkerScriptUrl();
+    const gif = new GIF({
+      workers: 4,
+      quality,
+      width: finalCrop.w,
+      height: finalCrop.h,
+      repeat: 0,
+      globalPalette: true,
+      transparent: 0xff00ff,
+      workerScript,
+    });
+    for (let i = 0; i < frames.length; i += 1) {
+      offscreenCtx.putImageData(frames[i], -finalCrop.x, -finalCrop.y);
+      const frame = offscreenCtx.getImageData(0, 0, finalCrop.w, finalCrop.h);
       const data = frame.data;
       for (let p = 0; p < data.length; p += 4) {
         if (data[p + 3] < alphaThreshold) {
@@ -1204,6 +1227,7 @@ async function downloadGif() {
       }
       offscreenCtx.putImageData(frame, 0, 0);
       gif.addFrame(offscreenCtx, { copy: true, delay: delayMs });
+      frames[i] = null;
       await new Promise((resolve) => setTimeout(resolve, 0));
     }
 
@@ -1215,7 +1239,7 @@ async function downloadGif() {
       link.download = filename;
       link.href = downloadUrl;
       link.click();
-      setStatus("GIF를 저장했습니다.");
+      setStatus(`내용에 맞춰 ${finalCrop.w}×${finalCrop.h} GIF를 저장했습니다.`);
     } finally {
       setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000);
     }
@@ -1296,56 +1320,50 @@ function encodeGif(gif, timeoutMs = 120000) {
   });
 }
 
-// 애니메이션 전체에서 실제 내용이 차지하는 영역을 구한다.
-// 프레임마다 글로우/맥동으로 크기가 조금씩 달라지므로 여러 프레임의 합집합을 쓴다.
-function measureContentBounds(frameCount, motionStep, gifSafe = true, baseTime = start, paddingRatio = 0.01, target = canvas, state = readState()) {
-  const w = target.width;
-  const h = target.height;
-  const targetCtx = target.getContext("2d");
-  const full = { x: 0, y: 0, w, h };
-  const samples = Math.min(frameCount, 6);
-  const alphaFloor = 8; // 이보다 옅은 픽셀은 여백으로 본다
-
-  let minX = w;
-  let minY = h;
+function findAlphaBounds(data, width, height, alphaThreshold) {
+  let minX = width;
+  let minY = height;
   let maxX = -1;
   let maxY = -1;
-
-  for (let s = 0; s < samples; s += 1) {
-    drawScene(baseTime + (s / samples) * frameCount * motionStep * 1000, gifSafe, state, target);
-
-    let data;
-    try {
-      data = targetCtx.getImageData(0, 0, w, h).data;
-    } catch {
-      return full; // 캔버스를 읽을 수 없으면 자르지 않는다
-    }
-
-    for (let y = 0; y < h; y += 1) {
-      const rowStart = y * w * 4;
-      for (let x = 0; x < w; x += 1) {
-        if (data[rowStart + x * 4 + 3] <= alphaFloor) continue;
-        if (x < minX) minX = x;
-        if (x > maxX) maxX = x;
-        if (y < minY) minY = y;
-        if (y > maxY) maxY = y;
-      }
+  for (let y = 0; y < height; y += 1) {
+    const rowStart = y * width * 4;
+    for (let x = 0; x < width; x += 1) {
+      if (data[rowStart + x * 4 + 3] < alphaThreshold) continue;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
     }
   }
+  if (maxX < minX || maxY < minY) return null;
+  return { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 };
+}
 
-  if (maxX < minX || maxY < minY) return full; // 내용이 없으면 전체 사용
-
-  const padX = Math.round(w * paddingRatio);
-  const padY = Math.round(h * paddingRatio);
-  const x = Math.max(0, minX - padX);
-  const y = Math.max(0, minY - padY);
-
+function unionBounds(a, b) {
+  if (!a) return b;
+  if (!b) return a;
+  const x = Math.min(a.x, b.x);
+  const y = Math.min(a.y, b.y);
   return {
-    x,
-    y,
-    w: Math.min(w - x, maxX - minX + 1 + padX * 2),
-    h: Math.min(h - y, maxY - minY + 1 + padY * 2),
+    x, y,
+    w: Math.max(a.x + a.w, b.x + b.w) - x,
+    h: Math.max(a.y + a.h, b.y + b.h) - y,
   };
+}
+
+async function measureContentBounds(frameCount, motionStep, target, state, alphaThreshold) {
+  const targetCtx = target.getContext("2d");
+  if (!targetCtx) throw new Error("2D canvas context is unavailable");
+  let bounds = null;
+  // 실제 저장하는 프레임 전부를 조사한다. 여백 추가나 실패 시 전체 캔버스
+  // 반환을 하지 않아 빈 대형 이미지가 다운로드되지 않는다.
+  for (let i = 0; i < frameCount; i += 1) {
+    drawScene(start + i * motionStep * 1000, true, state, target);
+    const frame = targetCtx.getImageData(0, 0, target.width, target.height);
+    bounds = unionBounds(bounds, findAlphaBounds(frame.data, target.width, target.height, alphaThreshold));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  return bounds;
 }
 
 function createGifWorkerScriptUrl() {

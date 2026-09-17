@@ -132,8 +132,8 @@ test('GIF uses one settings snapshot and independent canvas despite resize and e
   assert.equal(h.copies.length, 4);
   for (const frame of h.copies) {
     assert.notEqual(frame.source, h.elements.overlayCanvas);
-    assert.equal(frame.width, 1920);
-    assert.equal(frame.height, 1080);
+    assert.equal(frame.width, 640);
+    assert.equal(frame.height, 360);
     assert.ok(frame.texts.includes('Before'));
     assert.ok(frame.texts.includes('Brand'));
     assert.ok(!frame.texts.includes('After'));
@@ -195,4 +195,48 @@ test('PNG retains content-sized crop after shared renderer changes', () => {
   assert.equal(h.elements.overlayCanvas.width, 800);
   assert.equal(h.elements.overlayCanvas.height, 450);
   assert.equal(h.elements.downloadPng.disabled, false);
+});
+
+test('alpha crop ignores GIF-transparent pixels and adds no padding at edges', () => {
+  const h = harness();
+  const data = new Uint8ClampedArray(10 * 8 * 4);
+  data[3] = 8;
+  data[(7 * 10 + 9) * 4 + 3] = 109;
+  data[(2 * 10 + 3) * 4 + 3] = 110;
+  data[(4 * 10 + 5) * 4 + 3] = 255;
+  const bounds = h.sandbox.findAlphaBounds(data, 10, 8, 110);
+  assert.deepEqual({ ...bounds }, { x: 3, y: 2, w: 3, h: 3 });
+  data.fill(0);
+  data[3] = 255;
+  assert.deepEqual({ ...h.sandbox.findAlphaBounds(data, 10, 8, 110) }, { x: 0, y: 0, w: 1, h: 1 });
+  data.fill(0);
+  assert.equal(h.sandbox.findAlphaBounds(data, 10, 8, 110), null);
+});
+
+test('all GIF frames including unsampled intermediate motion contribute to crop', async () => {
+  const h = harness();
+  let frameIndex = 0;
+  h.sandbox.drawScene = () => {};
+  const target = { width: 12, height: 1, getContext: () => ({
+    getImageData() {
+      const data = new Uint8ClampedArray(12 * 4);
+      data[((frameIndex++ === 1 ? 11 : 4) * 4) + 3] = 255;
+      return { data };
+    },
+  }) };
+  const bounds = await h.sandbox.measureContentBounds(12, 1 / 15, target, {}, 110);
+  assert.equal(frameIndex, 12);
+  assert.deepEqual({ ...bounds }, { x: 4, y: 0, w: 8, h: 1 });
+});
+
+test('empty PNG and GIF do not download a full canvas', async () => {
+  const h = harness();
+  h.elements.name1.value = h.elements.rank1.value = '';
+  h.sandbox.downloadPng();
+  assert.match(h.elements.status.textContent, /저장할 내용이 없습니다/);
+  await h.sandbox.downloadGif();
+  assert.match(h.elements.status.textContent, /저장할 내용이 없습니다/);
+  assert.equal(h.downloads.length, 0);
+  assert.equal(h.elements.downloadPng.disabled, false);
+  assert.equal(h.elements.downloadGif.disabled, false);
 });
