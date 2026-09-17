@@ -147,6 +147,7 @@ const laurelStyles = Object.fromEntries(
 laurelStyles.svgMinimal = { label: "미니멀 리프 (SVG)", source: "extra", assetKey: "svg_minimal" };
 
 const fontFamilies = {
+  euljiro10: "\"BMEuljiro10yearslater\", \"Segoe UI\", Pretendard, system-ui, sans-serif",
   system: "\"Segoe UI\", Pretendard, system-ui, sans-serif",
   gang: "\"NanumGangBuJang\", \"Segoe UI\", Pretendard, system-ui, sans-serif",
   dad: "\"NanumDadLoveLetter\", \"Segoe UI\", Pretendard, system-ui, sans-serif",
@@ -1101,7 +1102,7 @@ function createExportCanvas() {
   return output;
 }
 
-function downloadPng() {
+async function downloadPng() {
   if (exportInProgress) return;
   setExportBusy(true);
   try {
@@ -1109,6 +1110,10 @@ function downloadPng() {
     if (!state.winners.length) {
       setStatus("저장할 내용이 없습니다.");
       return;
+    }
+    if (document.fonts?.load) {
+      setStatus("폰트를 불러오는 중입니다.");
+      await document.fonts.load(`16px ${fontStack(state)}`);
     }
     const exportCanvas = createExportCanvas();
     const now = performance.now();
@@ -1167,6 +1172,10 @@ async function downloadGif() {
       return;
     }
     const filename = `${filePrefix(state)}-podium-animation.gif`;
+    if (document.fonts?.load) {
+      setStatus("폰트를 불러오는 중입니다.");
+      await document.fonts.load(`16px ${fontStack(state)}`);
+    }
     const exportCanvas = createExportCanvas();
     const alphaThreshold = 110;
 

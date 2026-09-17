@@ -118,6 +118,39 @@ function harness(mode = 'success', onYield = () => {}) {
     run: (code) => vm.runInContext(code, sandbox) };
 }
 
+for (const exportName of ['downloadPng', 'downloadGif']) {
+  test(`${exportName} waits for the selected font and retains its settings snapshot`, async () => {
+    const h = harness();
+    h.elements.fontFamily.value = 'euljiro10';
+    let release;
+    let requested;
+    h.sandbox.document.fonts = { load: (font) => {
+      requested = font;
+      return new Promise((resolve) => { release = resolve; });
+    } };
+    const pending = h.run(`${exportName}()`);
+    assert.match(requested, /BMEuljiro10yearslater/);
+    assert.equal(h.downloads.length, 0);
+    assert.equal(h.elements.downloadPng.disabled, true);
+    h.elements.fontFamily.value = 'system';
+    h.elements.name1.value = 'Changed';
+    release([]);
+    await pending;
+    assert.ok(h.downloads.some((item) => item.filename?.startsWith('Before-')));
+    assert.equal(h.errors.length, 0);
+    assert.equal(h.elements.downloadPng.disabled, false);
+  });
+
+  test(`${exportName} does not silently export a fallback when font loading fails`, async () => {
+    const h = harness();
+    h.sandbox.document.fonts = { load: () => Promise.reject(new Error('font unavailable')) };
+    await h.run(`${exportName}()`);
+    assert.equal(h.downloads.length, 0);
+    assert.equal(h.elements.downloadPng.disabled, false);
+    assert.equal(h.elements.downloadGif.disabled, false);
+  });
+}
+
 test('SVG asset paths match the bundled source and keep stroke rendering separate from EPS fills', () => {
   const h = harness();
   const asset = h.sandbox.window.LAUREL_EXTRA_PATHS.svg_minimal;

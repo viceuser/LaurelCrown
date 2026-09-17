@@ -21,6 +21,14 @@
   font-display: swap;
 }
 
+@font-face {
+  font-family: "BMEuljiro10yearslater";
+  src: url("assets/fonts/BMEuljiro10yearslater.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
 * {
   box-sizing: border-box;
 }

@@ -1,4 +1,5 @@
 .vercel/
+.fonttools-tmp/
 .agents/
 .codex/
 
