@@ -77,27 +77,31 @@ select:focus {
 }
 
 .app-shell {
-  min-height: 100vh;
+  /* 긴 설정 패널이 미리보기까지 화면 높이 밖으로 늘리지 않도록 한다. */
+  height: 100vh;
+  height: 100dvh;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 360px;
+  grid-template-rows: minmax(0, 1fr);
 }
 
 .preview-stage {
-  min-height: 100vh;
+  min-width: 0;
+  min-height: 0;
   display: grid;
   place-items: center;
   padding: 32px;
 }
 
 #overlayCanvas {
-  width: min(100%, 1280px);
+  width: min(100%, 1280px, calc((100dvh - 64px) * 16 / 9));
   aspect-ratio: 16 / 9;
   height: auto;
   display: block;
 }
 
 .control-panel {
-  min-height: 100vh;
+  min-height: 0;
   border-left: 1px solid var(--line);
   background: color-mix(in srgb, var(--panel) 94%, black);
   padding: 28px;
@@ -438,12 +442,19 @@ input[type="range"] {
 
 @media (max-width: 920px) {
   .app-shell {
+    height: auto;
+    min-height: 100dvh;
     grid-template-columns: 1fr;
+    grid-template-rows: auto;
   }
 
   .preview-stage {
     min-height: 44vh;
     padding: 18px;
+  }
+
+  #overlayCanvas {
+    width: 100%;
   }
 
   .control-panel {
