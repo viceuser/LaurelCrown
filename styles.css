@@ -249,16 +249,27 @@ input[type="text"]:focus {
 }
 
 .tone-palette {
-  height: 44px;
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  align-items: center;
-  gap: 6px;
+  min-height: 44px;
   padding: 5px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #0f1216;
 }
+
+.tone-defaults,
+.tone-expanded {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+}
+
+.tone-more summary { cursor: pointer; font-size: 11px; padding: 4px 0; color: var(--muted); }
+.tone-custom { display: flex; align-items: center; justify-content: space-between; font-size: 11px; gap: 4px; padding: 4px 0; }
+.tone-custom input { width: 36px; height: 28px; padding: 0; border: 0; background: none; cursor: pointer; }
+.tone-custom.is-active { color: var(--focus); }
+.tone-swatch:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 
 .tone-swatch {
   width: 100%;

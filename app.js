@@ -125,6 +125,49 @@ const palettes = {
   },
 };
 
+const extraToneTemplates = {
+  ruby: "루비", orange: "오렌지", lime: "라임", emerald: "에메랄드",
+  blue: "블루", violet: "바이올렛", pink: "핑크", black: "블랙",
+};
+const allToneTemplates = { ...toneTemplates, ...extraToneTemplates };
+
+function paletteFromHex(hex) {
+  const rgb = hex.slice(1).match(/../g).map((part) => parseInt(part, 16));
+  const mix = (target, amount) => "#" + rgb.map((v) =>
+    Math.round(v + (target - v) * amount).toString(16).padStart(2, "0")).join("");
+  return {
+    laurelA: mix(255, 0.55), laurelB: mix(0, 0.42),
+    textA: mix(255, 0.8), textB: hex, textC: mix(0, 0.55),
+    glow: `rgba(${rgb.join(",")},0.7)`, particle: mix(255, 0.75),
+    shadow: `rgba(${rgb.map((v) => Math.round(v * 0.15)).join(",")},0.94)`,
+  };
+}
+Object.entries({ruby: "#ed4463", orange: "#ff923d", lime: "#b8db43", emerald: "#31bd82",
+  blue: "#428ef0", violet: "#a477eb", pink: "#ef88c0"}).forEach(([key, hex]) => {
+  palettes[key] = paletteFromHex(hex);
+});
+
+function isCustomTone(tone) { return typeof tone === "string" && /^#[0-9a-f]{6}$/i.test(tone); }
+function isTone(tone) { return Object.hasOwn(palettes, tone) || isCustomTone(tone); }
+function paletteForTone(tone) {
+  return isCustomTone(tone) ? paletteFromHex(tone) : (Object.hasOwn(palettes, tone) ? palettes[tone] : palettes.gold);
+}
+
+function setToneValue(select, tone) {
+  if (!isTone(tone)) return;
+  // Color-picker drag emits many values; retain only the current custom option.
+  Array.from(select.options).filter((item) => isCustomTone(item.value) && item.value !== tone)
+    .forEach((item) => item.remove());
+  let option = Array.from(select.options).find((item) => item.value === tone);
+  if (!option) {
+    option = document.createElement("option");
+    option.value = tone;
+    option.textContent = allToneTemplates[tone] || `직접 지정 ${tone}`;
+    select.append(option);
+  }
+  select.value = tone;
+}
+
 // 월계관 스타일 정의.
 // rx/ry: 반지름 배율, yOffset: 세로 보정, halfSpan: 한쪽 아크 반각(π 단위),
 // leafTilt: 잎 기울기(라디안), length/width: [기본값, 테이퍼 가중치],
@@ -180,7 +223,7 @@ function readState() {
     .map((item, index) => ({
       rank: item.label.trim(),
       name: item.name.trim(),
-      tone: palettes[item.tone] ? item.tone : "platinum",
+      tone: isTone(item.tone) ? item.tone : "platinum",
       labelOffset: -42,
       scale: 0.95,
       extraIndex: index,
@@ -194,7 +237,7 @@ function readState() {
           ...item,
           rank: controls[item.rankKey].value.trim(),
           name: controls[item.key].value.trim(),
-          tone: palettes[controls[item.toneKey].value] ? controls[item.toneKey].value : item.fallbackTone,
+          tone: isTone(controls[item.toneKey].value) ? controls[item.toneKey].value : item.fallbackTone,
         }))
         .filter((item) => item.name || item.rank),
       ...filledExtraWinners,
@@ -219,8 +262,8 @@ function applyUrlState() {
   podium.forEach((item) => {
     if (item.rankKey && params.has(item.rankKey)) controls[item.rankKey].value = params.get(item.rankKey).slice(0, 6);
     if (params.has(item.key)) controls[item.key].value = params.get(item.key).slice(0, 18);
-    if (params.has(item.toneKey) && palettes[params.get(item.toneKey)]) {
-      controls[item.toneKey].value = params.get(item.toneKey);
+    if (params.has(item.toneKey) && isTone(params.get(item.toneKey))) {
+      setToneValue(controls[item.toneKey], params.get(item.toneKey));
     }
   });
 
@@ -231,7 +274,7 @@ function applyUrlState() {
         extraWinners = parsed.slice(0, MAX_EXTRA_WINNERS).map((item) => ({
           label: String(item.label ?? "").slice(0, 8),
           name: String(item.name || "").slice(0, 18),
-          tone: palettes[item.tone] ? item.tone : "platinum",
+          tone: isTone(item.tone) ? item.tone : "platinum",
         }));
       }
     } catch {
@@ -279,21 +322,44 @@ function renderLaurelStyleOptions() {
 function createTonePalette(select, onChange) {
   const paletteEl = document.createElement("div");
   paletteEl.className = "tone-palette";
-  Object.entries(toneTemplates).forEach(([key, label]) => {
+  const defaults = document.createElement("div");
+  defaults.className = "tone-defaults";
+  const more = document.createElement("details");
+  more.className = "tone-more";
+  const summary = document.createElement("summary");
+  summary.textContent = "더 많은 색";
+  const expanded = document.createElement("div");
+  expanded.className = "tone-expanded";
+  const choose = (key) => {
+    setToneValue(select, key);
+    updateTonePalette(paletteEl, key);
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+    onChange?.(key);
+  };
+  Object.entries(allToneTemplates).forEach(([key, label]) => {
     const button = document.createElement("button");
     button.type = "button";
     button.className = `tone-swatch tone-swatch-${key}`;
     button.dataset.tone = key;
     button.title = label;
     button.setAttribute("aria-label", label);
-    button.addEventListener("click", () => {
-      select.value = key;
-      updateTonePalette(paletteEl, key);
-      select.dispatchEvent(new Event("change", { bubbles: true }));
-      onChange?.(key);
-    });
-    paletteEl.append(button);
+    const colors = paletteForTone(key);
+    button.style.background = `linear-gradient(135deg, ${colors.textA}, ${colors.textB} 52%, ${colors.textC})`;
+    button.addEventListener("click", () => choose(key));
+    (Object.hasOwn(toneTemplates, key) ? defaults : expanded).append(button);
   });
+  const customLabel = document.createElement("label");
+  customLabel.className = "tone-custom";
+  customLabel.textContent = "직접 지정";
+  const custom = document.createElement("input");
+  custom.type = "color";
+  custom.value = isCustomTone(select.value) ? select.value : paletteForTone(select.value).textB;
+  custom.setAttribute("aria-label", `${select.getAttribute("aria-label") || "월계관 색상"} 직접 지정`);
+  custom.addEventListener("input", () => choose(custom.value));
+  customLabel.append(custom);
+  more.append(summary, expanded, customLabel);
+  paletteEl.append(defaults, more);
+  more.open = !Object.hasOwn(toneTemplates, select.value);
   updateTonePalette(paletteEl, select.value);
   return paletteEl;
 }
@@ -301,7 +367,15 @@ function createTonePalette(select, onChange) {
 function updateTonePalette(paletteEl, activeTone) {
   paletteEl.querySelectorAll(".tone-swatch").forEach((button) => {
     button.classList.toggle("is-active", button.dataset.tone === activeTone);
+    button.setAttribute("aria-pressed", String(button.dataset.tone === activeTone));
   });
+  const custom = paletteEl.querySelector('input[type="color"]');
+  if (custom) custom.value = isCustomTone(activeTone) ? activeTone : paletteForTone(activeTone).textB;
+  const label = paletteEl.querySelector(".tone-custom");
+  if (label) label.classList.toggle("is-active", isCustomTone(activeTone));
+  const summary = paletteEl.querySelector("summary");
+  if (summary) summary.textContent = Object.hasOwn(toneTemplates, activeTone)
+    ? "더 많은 색" : `${allToneTemplates[activeTone] || activeTone} · 더 보기`;
 }
 
 function renderTonePalettes() {
@@ -384,13 +458,13 @@ function renderExtraWinnerInputs() {
     const toneSelect = document.createElement("select");
     toneSelect.className = "tone-select";
     toneSelect.setAttribute("aria-label", `추가 월계관 ${index + 1} 색상`);
-    Object.entries(toneTemplates).forEach(([key, label]) => {
+    Object.entries(allToneTemplates).forEach(([key, label]) => {
       const option = document.createElement("option");
       option.value = key;
       option.textContent = label;
       toneSelect.append(option);
     });
-    toneSelect.value = palettes[item.tone] ? item.tone : "platinum";
+    setToneValue(toneSelect, isTone(item.tone) ? item.tone : "platinum");
     toneSelect.addEventListener("change", () => {
       extraWinners[index].tone = toneSelect.value;
     });
@@ -433,7 +507,7 @@ function fitCanvasToDisplay() {
 }
 
 function drawWinner(winner, cx, cy, blockWidth, centerGap, baseScale, time, state, index) {
-  const palette = palettes[winner.tone] || palettes.gold;
+  const palette = paletteForTone(winner.tone);
   const localScale = baseScale * winner.scale;
   const textScale = localScale * state.textScale;
   // 이웃 수상자와 겹치지 않도록 콘텐츠 폭을 중심 간격(centerGap) 이내로 제한한다.

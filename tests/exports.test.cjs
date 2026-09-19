@@ -119,6 +119,25 @@ function harness(mode = 'success', onYield = () => {}) {
 }
 
 for (const exportName of ['downloadPng', 'downloadGif']) {
+  test(`${exportName} supports extended and custom colors without changing defaults`, async () => {
+    const h = harness();
+    assert.equal(h.run('Object.keys(toneTemplates).join(",")'), 'gold,silver,bronze,platinum');
+    assert.equal(h.run('Object.keys(extraToneTemplates).length'), 8);
+    for (const tone of ['ruby', 'blue', 'violet', '#123456', '#FFFFFF', '#000000']) {
+      h.elements.tone1.value = tone;
+      assert.equal(h.run('readState().winners[0].tone'), tone);
+      await h.run(`${exportName}()`);
+    }
+    assert.equal(h.errors.length, 0);
+    for (const tone of ['__proto__', 'constructor', '#fff', '#zzzzzz', 'red']) {
+      h.elements.tone1.value = tone;
+      assert.equal(h.run('readState().winners[0].tone'), 'gold');
+    }
+    h.run('extraWinners = [{label:"추가", name:"Test", tone:"#456789"}]');
+    assert.equal(h.run('readState().winners.at(-1).tone'), '#456789');
+    assert.equal(h.run('paletteForTone("#123456").textB'), '#123456');
+  });
+
   test(`${exportName} waits for the selected font and retains its settings snapshot`, async () => {
     const h = harness();
     h.elements.fontFamily.value = 'euljiro10';
