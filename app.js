@@ -20,34 +20,7 @@ const controls = {
   nameScale: document.getElementById("nameScale"),
   spacing: document.getElementById("spacing"),
   speed: document.getElementById("speed"),
-  glow: document.getElementById("glow"),
-  glitter: document.getElementById("glitter"),
-  shine: document.getElementById("shine"),
-  sparkles: document.getElementById("sparkles"),
-  dust: document.getElementById("dust"),
-  hologram: document.getElementById("hologram"),
-  neon: document.getElementById("neon"),
-  fire: document.getElementById("fire"),
-  ice: document.getElementById("ice"),
-  lightning: document.getElementById("lightning"),
 };
-
-const effectKeys = [
-  "glow",
-  "glitter",
-  "shine",
-  "sparkles",
-  "dust",
-  "hologram",
-  "neon",
-  "fire",
-  "ice",
-  "lightning",
-];
-
-// GIF 변환 시 검은 노이즈를 유발하는 효과들(흩뿌려진 반투명 입자·가산 합성·부드러운 그라데이션).
-// 텍스트에 붙는 안정적 효과(glow/hologram/neon)는 GIF에서도 유지한다.
-const gifUnsafeEffects = ["glitter", "shine", "sparkles", "dust", "fire", "ice", "lightning"];
 
 const statusEl = document.getElementById("status");
 const extraWinnersEl = document.getElementById("extraWinners");
@@ -196,12 +169,6 @@ const fontFamilies = {
   dad: "\"NanumDadLoveLetter\", \"Segoe UI\", Pretendard, system-ui, sans-serif",
 };
 
-const seededParticles = Array.from({ length: 96 }, (_, index) => {
-  const x = fract(Math.sin(index * 91.13) * 10000);
-  const y = fract(Math.sin(index * 37.71 + 4) * 10000);
-  const phase = fract(Math.sin(index * 17.41 + 9) * 10000);
-  return { x, y, phase, size: 1 + fract(Math.sin(index * 7.9) * 10000) * 3.2 };
-});
 
 function fract(value) {
   return value - Math.floor(value);
@@ -250,7 +217,6 @@ function readState() {
     nameScale: Number(controls.nameScale.value) / 100,
     spacing: Number(controls.spacing.value) / 100,
     speed: Number(controls.speed.value) / 100,
-    effects: Object.fromEntries(effectKeys.map((key) => [key, controls[key].checked])),
   };
 }
 
@@ -301,11 +267,6 @@ function applyUrlState() {
     input.value = String(Math.min(Number(input.max), Math.max(Number(input.min), value)));
   });
 
-  Object.keys(controls).forEach((key) => {
-    if (params.has(key) && controls[key].type === "checkbox") {
-      controls[key].checked = params.get(key) === "1";
-    }
-  });
 }
 
 function renderLaurelStyleOptions() {
@@ -521,7 +482,6 @@ function drawWinner(winner, cx, cy, blockWidth, centerGap, baseScale, time, stat
   const brandSize = fitTextSize(state.brandText, Math.min(blockWidth * 0.52, overlapLimit), 23 * textScale, 12 * textScale, state);
   const phaseTime = time + index * 0.32;
 
-  drawParticles(cx, cy, radius * 1.35, radius * 1.15, phaseTime, palette, state, index);
   drawLaurel(cx, cy, radius, palette, phaseTime, localScale, state.laurelStyle);
   if (winner.rank) drawRank(winner.rank, cx, cy - 43 * localScale, topTextSize, palette, state);
   drawText(winner.name, cx, cy - 2 * localScale, nameSize, palette, phaseTime, state);
@@ -548,7 +508,7 @@ function drawRank(rank, cx, cy, fontSize, palette, state) {
   ctx.lineWidth = fontSize * 0.14;
   ctx.strokeStyle = palette.shadow;
   ctx.strokeText(rank, cx, cy);
-  ctx.fillStyle = state.effects.hologram ? "#ffffff" : palette.textB;
+  ctx.fillStyle = palette.textB;
   ctx.fillText(rank, cx, cy);
   ctx.restore();
 }
@@ -918,16 +878,6 @@ function drawText(name, cx, cy, fontSize, palette, time, state) {
   const textWidth = metrics.width;
   const x0 = cx - textWidth / 2;
 
-  if (state.effects.glow) {
-    const glowSize = 10 + Math.sin(time * 2.1) * 5;
-    ctx.shadowBlur = glowSize;
-    ctx.shadowColor = palette.glow;
-    ctx.globalAlpha = 0.9;
-    ctx.strokeStyle = palette.glow;
-    ctx.lineWidth = fontSize * 0.1;
-    ctx.strokeText(name, cx, cy);
-  }
-
   ctx.shadowBlur = 0;
   ctx.globalAlpha = 1;
   ctx.lineWidth = fontSize * 0.16;
@@ -935,37 +885,14 @@ function drawText(name, cx, cy, fontSize, palette, time, state) {
   ctx.strokeText(name, cx, cy);
 
   const gradient = ctx.createLinearGradient(x0, cy - fontSize, x0 + textWidth, cy + fontSize);
-  if (state.effects.hologram) {
-    gradient.addColorStop(0, "#ff9bd5");
-    gradient.addColorStop(0.24, "#fff6a8");
-    gradient.addColorStop(0.5, "#9fffe0");
-    gradient.addColorStop(0.74, "#9ab8ff");
-    gradient.addColorStop(1, "#ffffff");
-  } else {
-    gradient.addColorStop(0, palette.textC);
-    gradient.addColorStop(0.24, palette.textA);
-    gradient.addColorStop(0.5, palette.textB);
-    gradient.addColorStop(0.76, palette.textA);
-    gradient.addColorStop(1, palette.textC);
-  }
+  gradient.addColorStop(0, palette.textC);
+  gradient.addColorStop(0.24, palette.textA);
+  gradient.addColorStop(0.5, palette.textB);
+  gradient.addColorStop(0.76, palette.textA);
+  gradient.addColorStop(1, palette.textC);
 
   ctx.fillStyle = gradient;
   ctx.fillText(name, cx, cy);
-
-  if (state.effects.neon) {
-    ctx.globalCompositeOperation = "lighter";
-    ctx.shadowBlur = 15;
-    ctx.shadowColor = "#6ff7ff";
-    ctx.strokeStyle = "rgba(111, 247, 255, 0.7)";
-    ctx.lineWidth = fontSize * 0.045;
-    ctx.strokeText(name, cx, cy);
-  }
-
-  if (state.effects.shine) drawShine(cx, cy, textWidth, fontSize, time, state.speed);
-  if (state.effects.glitter) drawGlitterOverText(x0, cy, textWidth, fontSize, time, palette);
-  if (state.effects.ice) drawIce(cx, cy, textWidth, fontSize, time);
-  if (state.effects.fire) drawFire(cx, cy, textWidth, fontSize, time);
-  if (state.effects.lightning) drawLightning(cx, cy, textWidth, fontSize, time);
 
   ctx.restore();
 }
@@ -987,120 +914,6 @@ function drawBrand(label, cx, cy, fontSize, palette, time, state) {
   ctx.restore();
 }
 
-function drawShine(cx, cy, width, fontSize, time, speed) {
-  const sweep = ((time * 0.42 * speed) % 1) * (width + fontSize * 2) - fontSize - width / 2;
-  const shine = ctx.createLinearGradient(cx + sweep - 42, cy, cx + sweep + 42, cy);
-  shine.addColorStop(0, "rgba(255,255,255,0)");
-  shine.addColorStop(0.5, "rgba(255,255,255,0.82)");
-  shine.addColorStop(1, "rgba(255,255,255,0)");
-  ctx.save();
-  ctx.globalCompositeOperation = "lighter";
-  ctx.translate(cx + sweep, cy);
-  ctx.rotate(-0.28);
-  ctx.fillStyle = shine;
-  ctx.fillRect(-26, -fontSize * 0.95, 52, fontSize * 1.9);
-  ctx.restore();
-}
-
-function drawGlitterOverText(x, y, width, fontSize, time, palette) {
-  ctx.save();
-  ctx.globalCompositeOperation = "lighter";
-  seededParticles.slice(0, 26).forEach((p, index) => {
-    const alpha = Math.max(0, Math.sin(time * 4 + p.phase * 8 + index));
-    if (alpha < 0.45) return;
-    const px = x + p.x * width;
-    const py = y - fontSize * 0.52 + p.y * fontSize * 0.98;
-    drawStar(px, py, p.size * 1.45, palette.particle, alpha);
-  });
-  ctx.restore();
-}
-
-function drawParticles(cx, cy, w, h, time, palette, state, offset) {
-  if (!state.effects.sparkles && !state.effects.dust) return;
-
-  ctx.save();
-  ctx.globalCompositeOperation = "lighter";
-  seededParticles.forEach((p, index) => {
-    if ((index + offset) % 3 !== 0) return;
-    const drift = (time * (0.02 + p.phase * 0.04) + p.phase) % 1;
-    const px = cx - w / 2 + p.x * w + Math.sin(time + index) * 10;
-    const py = cy - h / 2 + ((p.y + drift) % 1) * h;
-    const alpha = state.effects.dust ? 0.22 + p.phase * 0.28 : Math.max(0, Math.sin(time * 3 + p.phase * 10));
-    const size = state.effects.dust ? p.size * 0.72 : p.size * 1.5;
-    drawStar(px, py, size, palette.particle, alpha);
-  });
-  ctx.restore();
-}
-
-function drawStar(x, y, radius, color, alpha) {
-  ctx.save();
-  ctx.translate(x, y);
-  ctx.globalAlpha = alpha;
-  ctx.fillStyle = color;
-  ctx.beginPath();
-  for (let i = 0; i < 8; i += 1) {
-    const r = i % 2 === 0 ? radius : radius * 0.28;
-    const a = (Math.PI * 2 * i) / 8;
-    ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
-  }
-  ctx.closePath();
-  ctx.fill();
-  ctx.restore();
-}
-
-function drawIce(cx, cy, width, fontSize, time) {
-  ctx.save();
-  ctx.globalCompositeOperation = "lighter";
-  ctx.strokeStyle = "rgba(178, 239, 255, 0.62)";
-  ctx.lineWidth = 1.5;
-  for (let i = 0; i < 6; i += 1) {
-    const x = cx - width / 2 + (i / 5) * width;
-    const y = cy + fontSize * 0.43 + Math.sin(time * 2 + i) * 4;
-    ctx.beginPath();
-    ctx.moveTo(x, y);
-    ctx.lineTo(x + 7, y + 13);
-    ctx.lineTo(x + 14, y);
-    ctx.stroke();
-  }
-  ctx.restore();
-}
-
-function drawFire(cx, cy, width, fontSize, time) {
-  ctx.save();
-  ctx.globalCompositeOperation = "lighter";
-  for (let i = 0; i < 12; i += 1) {
-    const phase = i * 0.73;
-    const x = cx - width / 2 + ((i + 0.5) / 12) * width + Math.sin(time * 5 + phase) * 5;
-    const y = cy + fontSize * 0.48 - Math.abs(Math.sin(time * 3 + phase)) * 18;
-    const gradient = ctx.createRadialGradient(x, y, 1, x, y, 13);
-    gradient.addColorStop(0, "rgba(255, 241, 126, 0.72)");
-    gradient.addColorStop(0.45, "rgba(255, 109, 43, 0.34)");
-    gradient.addColorStop(1, "rgba(255, 55, 0, 0)");
-    ctx.fillStyle = gradient;
-    ctx.beginPath();
-    ctx.ellipse(x, y, 8, 18, 0, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  ctx.restore();
-}
-
-function drawLightning(cx, cy, width, fontSize, time) {
-  if (Math.sin(time * 5.4) < 0.78) return;
-  ctx.save();
-  ctx.globalCompositeOperation = "lighter";
-  ctx.strokeStyle = "rgba(255, 255, 255, 0.86)";
-  ctx.shadowBlur = 10;
-  ctx.shadowColor = "#f9fbff";
-  ctx.lineWidth = 2.2;
-  const x = cx - width * 0.36 + fract(Math.sin(Math.floor(time * 5) * 41) * 1000) * width * 0.72;
-  ctx.beginPath();
-  ctx.moveTo(x, cy - fontSize * 0.78);
-  ctx.lineTo(x + 14, cy - fontSize * 0.24);
-  ctx.lineTo(x - 3, cy - fontSize * 0.18);
-  ctx.lineTo(x + 12, cy + fontSize * 0.5);
-  ctx.stroke();
-  ctx.restore();
-}
 
 function drawScene(now, gifSafe = false, state = readState(), target = canvas) {
   // 하위 그리기 함수는 동기 실행된다. 한 장을 그리는 동안만 전용 context를 사용하고
@@ -1116,14 +929,6 @@ function drawScene(now, gifSafe = false, state = readState(), target = canvas) {
 }
 
 function drawSceneContent(now, gifSafe, state, target) {
-  // GIF는 반투명/가산 합성 효과를 깨끗이 담지 못해 검은 노이즈가 생긴다.
-  // GIF 저장 시에는 노이즈 유발 효과를 끄고, 텍스트에 붙는 안정적 효과만 남긴다.
-  if (gifSafe) {
-    state = { ...state, effects: { ...state.effects } };
-    gifUnsafeEffects.forEach((key) => {
-      state.effects[key] = false;
-    });
-  }
   const time = ((now - start) / 1000) * state.speed;
   const w = target.width;
   const h = target.height;
@@ -1238,7 +1043,7 @@ async function downloadGif() {
   let workerScript = "";
 
   try {
-    // readState는 winners/effects까지 새 객체로 만든다. 파일명과 모든 프레임이
+    // readState는 winners까지 새 객체로 만든다. 파일명과 모든 프레임이
     // 저장 시작 시점의 설정을 공유하며 이후 사용자 입력과는 독립적이다.
     const state = readState();
     if (!state.winners.length) {

@@ -378,29 +378,6 @@ input[type="range"] {
   gap: 14px;
 }
 
-.checks {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 9px;
-}
-
-.checks label {
-  min-height: 34px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 9px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #101419;
-  color: var(--text);
-  font-size: 12px;
-  font-weight: 650;
-}
-
-.checks input {
-  accent-color: var(--focus);
-}
 
 .actions {
   display: grid;
@@ -497,8 +474,7 @@ input[type="range"] {
     grid-template-columns: 58px minmax(0, 1fr) 112px 36px;
   }
 
-  .two-col,
-  .checks {
+  .two-col {
     grid-template-columns: 1fr;
   }
 }

@@ -118,6 +118,16 @@ function harness(mode = 'success', onYield = () => {}) {
     run: (code) => vm.runInContext(code, sandbox) };
 }
 
+test('removed effect controls and legacy URL flags cannot enable effects', () => {
+  const h = harness();
+  assert.equal(h.run('"effects" in readState()'), false);
+  for (const key of ['glow', 'glitter', 'shine', 'sparkles', 'dust', 'hologram', 'neon', 'fire', 'ice', 'lightning']) {
+    assert.equal(h.run(`Object.hasOwn(controls, '${key}')`), false);
+    assert.ok(!read('index.html').includes(`id="${key}"`));
+  }
+  assert.doesNotMatch(app, /state\.effects|gifUnsafeEffects|drawParticles/);
+});
+
 for (const exportName of ['downloadPng', 'downloadGif']) {
   test(`${exportName} supports extended and custom colors without changing defaults`, async () => {
     const h = harness();
