@@ -279,6 +279,29 @@ test('drawing failure restores preview context', () => {
   assert.equal(h.run('ctx'), original);
 });
 
+test('PNG uses a stable 2x render independent of viewport and DPR; GIF keeps display size', () => {
+  const h = harness();
+  for (const width of [320, 856, 1280]) {
+    h.elements.overlayCanvas.getBoundingClientRect = () => ({width, height: width * 9 / 16});
+    h.sandbox.window.devicePixelRatio = 2;
+    const png = h.run('createPngCanvas()');
+    assert.equal(png.width, 2560);
+    assert.equal(png.height, 1440);
+    assert.equal(h.run('createExportCanvas().width'), width);
+  }
+  let threshold;
+  const bounds = h.sandbox.findAlphaBounds;
+  h.sandbox.findAlphaBounds = (data, w, height, alpha) => {
+    threshold = alpha;
+    return bounds(data, w, height, alpha);
+  };
+  h.run('downloadPng()');
+  assert.equal(h.copies.at(-1).width, 2560);
+  assert.equal(threshold, 1);
+  const faint = new Uint8ClampedArray([255, 255, 255, 1]);
+  assert.equal(bounds(faint, 1, 1, threshold).w, 1);
+});
+
 test('PNG retains content-sized crop after shared renderer changes', () => {
   const h = harness();
   h.sandbox.downloadPng();

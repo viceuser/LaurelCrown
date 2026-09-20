@@ -971,6 +971,15 @@ function setExportBusy(busy) {
   });
 }
 
+function createPngCanvas() {
+  // 1280×720 디자인을 2배 해상도로 다시 그린다. 미리보기 픽셀을 확대하지 않는다.
+  // 이 캔버스는 렌더링용이며, 저장 파일에는 실제 내용 영역만 남긴다.
+  const output = document.createElement("canvas");
+  output.width = 2560;
+  output.height = 1440;
+  return output;
+}
+
 function createExportCanvas() {
   // 출력은 화면에 보이는 크기를 기준으로 한다. DPR 또는 1920px 강제 확대를
   // 저장 파일에 적용하지 않으며, 이후 실제 내용 영역만 남긴다.
@@ -994,11 +1003,12 @@ async function downloadPng() {
       setStatus("폰트를 불러오는 중입니다.");
       await document.fonts.load(`16px ${fontStack(state)}`);
     }
-    const exportCanvas = createExportCanvas();
+    const exportCanvas = createPngCanvas();
     const now = performance.now();
     drawScene(now, false, state, exportCanvas);
     const frame = exportCanvas.getContext("2d").getImageData(0, 0, exportCanvas.width, exportCanvas.height);
-    const crop = findAlphaBounds(frame.data, exportCanvas.width, exportCanvas.height, 9);
+    // PNG는 반투명을 보존한다. 완전히 투명한 바깥 여백만 제거한다.
+    const crop = findAlphaBounds(frame.data, exportCanvas.width, exportCanvas.height, 1);
     if (!crop) {
       setStatus("저장할 내용이 없습니다.");
       return;
